@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AWS SAA-C03 Random Exam 1-684</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <noscript>
+    <div class="noscript">
+      JavaScript is disabled. This quiz needs JavaScript. Open the GitHub Pages website in Safari or Chrome.
+    </div>
+  </noscript>
+
+  <header class="topbar">
+    <div>
+      <h1>AWS SAA-C03 Random Exam</h1>
+      <p>Questions 1-684 · 64 questions per main session · persistent wrong-answer practice</p>
+    </div>
+    <div class="topbar-actions">
+      <div class="sync-panel" aria-label="Cloud sync">
+        <div class="auth-row">
+          <input id="authEmail" type="email" autocomplete="email" placeholder="Email">
+          <input id="authPassword" type="password" autocomplete="current-password" placeholder="Password">
+          <button id="authLoginBtn" class="secondary" type="button">Login</button>
+          <button id="authSignUpBtn" class="ghost" type="button">Sign up</button>
+          <button id="authResetBtn" class="ghost" type="button">Reset</button>
+          <button id="authLogoutBtn" class="ghost hidden" type="button">Logout</button>
+        </div>
+        <div class="sync-row">
+          <span id="authUser" class="small">Local-only mode</span>
+          <span id="syncStatus" class="sync-status">Offline</span>
+        </div>
+      </div>
+      <button id="pauseTopBtn" class="ghost" disabled>Pause</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="diagnostic" class="card warning">
+      JavaScript has not started. Upload the extracted files to GitHub Pages and open the live website.
+    </section>
+
+    <section id="introCard" class="card hero">
+      <h2>Random 64-question exam</h2>
+      <p>Each main session uses questions that have not appeared earlier in the current 684-question cycle.</p>
+
+      <ul>
+        <li>Questions are randomized, not shown in source-file order.</li>
+        <li>Options are shuffled and relabeled A/B/C/D/E/F by their displayed order.</li>
+        <li>When the current cycle runs out during a 64-question set, the app begins the next cycle and fills the rest of that set.</li>
+        <li>The app avoids showing the same question twice inside one session, including a session that crosses a cycle boundary.</li>
+        <li>Every finished session creates a wrong-answer practice quiz.</li>
+        <li>Wrong-answer quizzes remain permanently available from Session History until history is cleared.</li>
+      </ul>
+
+      <div id="cycleStatus" class="status-box"></div>
+
+      <div class="actions">
+        <button id="continueBtn" class="primary">Start / Continue Current Session</button>
+        <button id="newMainBtn" class="secondary">Start Next Main Session</button>
+        <button id="currentWrongBtn" class="primary hidden">Practice Current Wrong Answers</button>
+        <button id="resetAllBtn" class="ghost">Reset Progress + History</button>
+      </div>
+    </section>
+
+    <section id="pausedCard" class="card hidden">
+      <h2>Quiz paused</h2>
+      <p id="pauseSavedText">Your progress has been saved on this device.</p>
+      <div class="actions">
+        <button id="resumeBtn" class="primary">Resume</button>
+        <button id="returnFromPauseBtn" class="secondary hidden">Return to Previous Session</button>
+      </div>
+    </section>
+
+    <section id="quizArea" class="hidden">
+      <section class="stats">
+        <div><span>Mode</span><b id="statMode">Main</b></div>
+        <div><span>Progress</span><b id="statProgress">0/64</b></div>
+        <div><span>Correct</span><b id="statCorrect">0</b></div>
+        <div><span>Wrong</span><b id="statWrong">0</b></div>
+        <div><span>Time</span><b id="statTime">00:00</b></div>
+      </section>
+
+      <div class="progress-track">
+        <div id="progressBar" class="progress-bar"></div>
+      </div>
+
+      <section class="card question-card">
+        <div class="meta">
+          <span id="sessionPosition">Question 1 of 64</span>
+          <span id="sourceQuestion">Source Question #1</span>
+          <span id="cycleBadge">Cycle 1</span>
+        </div>
+
+        <h2 id="questionText"></h2>
+        <p id="multiHint" class="small hidden">
+          Multiple answers: choose every correct option, then tap Submit Answer.
+        </p>
+
+        <div id="options" class="options"></div>
+        <div id="feedback" class="feedback"></div>
+
+        <div class="actions">
+          <button id="previousBtn" class="secondary">Previous</button>
+          <button id="submitBtn" class="primary">Submit Answer</button>
+          <button id="nextBtn" class="primary hidden">Next</button>
+          <button id="pauseBtn" class="ghost">Pause</button>
+        </div>
+      </section>
+    </section>
+
+    <section id="resultsCard" class="card hidden">
+      <h2 id="resultsTitle">Session Finished</h2>
+
+      <div class="results-grid">
+        <div><span>Score</span><b id="finalScore">0/64</b></div>
+        <div><span>Percentage</span><b id="finalPercentage">0%</b></div>
+        <div><span>Wrong</span><b id="finalWrong">0</b></div>
+        <div><span>Time</span><b id="finalTime">00:00</b></div>
+      </div>
+
+      <p id="resultsNote" class="small"></p>
+
+      <div class="actions">
+        <button id="wrongRetestBtn" class="primary hidden">Practice Wrong Answers</button>
+        <button id="reviewBtn" class="secondary">Show / Hide Review</button>
+        <button id="nextMainResultsBtn" class="primary">Start Next Main Session</button>
+        <button id="returnToPreviousBtn" class="secondary hidden">Return to Previous Session</button>
+      </div>
+
+      <div id="reviewArea" class="review hidden"></div>
+    </section>
+
+    <section class="card">
+      <div class="history-heading">
+        <div>
+          <h2>Session History</h2>
+          <p class="small">
+            Every entry keeps its wrong-question practice button, so you can reopen and practice that set at any time.
+          </p>
+        </div>
+        <button id="clearHistoryBtn" class="ghost">Clear History</button>
+      </div>
+
+      <div id="historyBar" class="history-bar"></div>
+      <div id="historyList" class="history-list"></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="supabase-sync.js"></script>
+  <script src="questions.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
