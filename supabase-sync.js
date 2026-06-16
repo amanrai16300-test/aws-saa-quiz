@@ -14,6 +14,14 @@
     return Date.now();
   }
 
+  function projectUrl(url) {
+    try {
+      return new URL(url).origin;
+    } catch (error) {
+      return url;
+    }
+  }
+
   function createNoopSync() {
     return {
       enabled: false,
@@ -62,7 +70,10 @@
       return createNoopSync();
     }
 
-    var client = window.supabase.createClient(CONFIG.url, CONFIG.anonKey);
+    var client = window.supabase.createClient(
+      projectUrl(CONFIG.url),
+      CONFIG.anonKey
+    );
     var saveTimer = null;
     var statusHandler = null;
     var remoteHandler = null;
