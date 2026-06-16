@@ -80,6 +80,7 @@
     var getPayload = null;
     var currentUser = null;
     var saving = false;
+    var channel = null;
 
     function emitStatus(status) {
       if (statusHandler) {
@@ -91,6 +92,66 @@
       if (remoteHandler) {
         remoteHandler(payload);
       }
+    }
+
+    function unsubscribeRealtime() {
+      if (channel) {
+        client.removeChannel(channel);
+        channel = null;
+      }
+    }
+
+    function subscribeRealtime() {
+      unsubscribeRealtime();
+
+      if (!currentUser || !client.channel) {
+        return;
+      }
+
+      channel = client
+        .channel("quiz_progress_" + currentUser.id)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: TABLE_NAME,
+            filter: "user_id=eq." + currentUser.id
+          },
+          function (change) {
+            var row = normalizeRow(change.new);
+            var localPayload = getPayload ? getPayload() : null;
+
+            if (!row || !row.payload) {
+              return;
+            }
+
+            if (
+              localPayload &&
+              row.payload.clientId === localPayload.clientId
+            ) {
+              emitStatus("Saved");
+              return;
+            }
+
+            if (
+              localPayload &&
+              localPayload.updatedAtMs &&
+              row.updatedAtMs &&
+              localPayload.updatedAtMs > row.updatedAtMs
+            ) {
+              queueSave();
+              return;
+            }
+
+            emitRemote(row.payload);
+          }
+        )
+        .subscribe(function (status) {
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            emitStatus("Sync error");
+          }
+        });
     }
 
     function currentOrigin() {
@@ -192,11 +253,16 @@
       }
       emitStatus("Saving");
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(saveNow, 900);
+      saveTimer = setTimeout(saveNow, 500);
     }
 
     function handleSession(session) {
       currentUser = session && session.user ? session.user : null;
+      if (currentUser) {
+        subscribeRealtime();
+      } else {
+        unsubscribeRealtime();
+      }
       emitStatus(currentUser ? "Saved" : DEFAULT_STATUS);
       return currentUser;
     }
@@ -245,7 +311,11 @@
         });
       },
       logout: function () {
-        return client.auth.signOut();
+        return saveNow().finally(function () {
+          unsubscribeRealtime();
+        }).then(function () {
+          return client.auth.signOut();
+        });
       },
       resetPassword: function (email) {
         return client.auth.resetPasswordForEmail(email, {

@@ -176,6 +176,12 @@
     }
   }
 
+  function flushCloudSave() {
+    if (!applyingRemote && sync && sync.user) {
+      sync.saveNow();
+    }
+  }
+
   function allQuestionIndices() {
     var indices = [];
     for (var index = 0; index < POOL_SIZE; index += 1) {
@@ -870,6 +876,7 @@
       return;
     }
 
+    flushCloudSave();
     sync.logout()
       .then(function (result) {
         handleAuthError(result);
@@ -1223,6 +1230,7 @@
     state.paused = false;
     addHistoryEntry();
     saveState();
+    flushCloudSave();
     showResults();
   }
 
@@ -1295,6 +1303,7 @@
     stopTimer();
     state.paused = true;
     saveState();
+    flushCloudSave();
     switchView("paused");
   }
 
