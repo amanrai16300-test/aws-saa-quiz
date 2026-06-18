@@ -755,7 +755,7 @@ window.QUIZ_QUESTIONS = [
       }
     ],
     "correct": [
-      "A"
+      "B"
     ],
     "multi": false,
     "answerSource": "uploaded_complete_answer_key_q1_684"
@@ -3735,8 +3735,8 @@ window.QUIZ_QUESTIONS = [
       }
     ],
     "correct": [
-      "C",
-      "D"
+      "A",
+      "C"
     ],
     "multi": true,
     "answerSource": "uploaded_complete_answer_key_q1_684"
