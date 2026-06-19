@@ -547,6 +547,12 @@
     }
   }
 
+  function mainOnlyHistory(history) {
+    return (history || []).filter(function (entry) {
+      return entry && entry.mode === "main";
+    });
+  }
+
   function saveHistory(history) {
     if (!storageAvailable) {
       return;
@@ -571,7 +577,7 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
         localStorage.setItem(
           HISTORY_KEY,
-          JSON.stringify((nextHistory || []).slice(-120))
+          JSON.stringify(mainOnlyHistory(nextHistory).slice(-120))
         );
       }
       setLocalUpdatedAt(updatedAtMs);
@@ -1191,6 +1197,10 @@
   }
 
   function addHistoryEntry() {
+    if (state.mode !== "main") {
+      return;
+    }
+
     if (state.historyRecorded) {
       return;
     }
@@ -1815,6 +1825,18 @@
     }
 
     state = loadState() || createMainState(newTracker(1));
+
+    var existingHistory = loadHistory();
+    var cleanedHistory = mainOnlyHistory(existingHistory);
+    if (cleanedHistory.length !== existingHistory.length && storageAvailable) {
+      try {
+        localStorage.setItem(
+          HISTORY_KEY,
+          JSON.stringify(cleanedHistory.slice(-120))
+        );
+      } catch (error) {}
+    }
+
     var meta = readMeta();
     localUpdatedAt =
       meta.updatedAtMs || inferredLocalUpdatedAt(loadHistory());
