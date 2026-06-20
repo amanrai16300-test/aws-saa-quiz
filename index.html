@@ -150,6 +150,7 @@
       <div class="actions">
         <button id="continueBtn" class="primary">Start / Continue Current Session</button>
         <button id="newMainBtn" class="secondary">Start Next Main Session</button>
+        <button id="resumeWrongIntroBtn" class="secondary hidden" type="button">Resume Wrong Practice</button>
         <button id="currentWrongBtn" class="primary hidden">Practice Current Wrong Answers</button>
         <button id="resetAllBtn" class="ghost">Reset Progress + History</button>
       </div>
@@ -160,7 +161,8 @@
       <p id="pauseSavedText">Your progress has been saved on this device.</p>
       <div class="actions">
         <button id="resumeBtn" class="primary">Resume</button>
-        <button id="returnFromPauseBtn" class="secondary hidden">Return to Previous Session</button>
+        <button id="returnFromPauseBtn" class="secondary hidden" type="button">Resume Main Session</button>
+        <button id="nextMainPausedBtn" class="secondary hidden" type="button">Start Next Main Session</button>
       </div>
     </section>
 
@@ -197,6 +199,9 @@
           <button id="submitBtn" class="primary">Submit Answer</button>
           <button id="nextBtn" class="primary hidden">Next</button>
           <button id="pauseBtn" class="ghost">Pause</button>
+          <button id="resumeMainQuizBtn" class="secondary hidden" type="button">Resume Main Session</button>
+          <button id="nextMainQuizBtn" class="secondary hidden" type="button">Start Next Main Session</button>
+          <button id="resumeWrongQuizBtn" class="secondary hidden" type="button">Resume Wrong Practice</button>
         </div>
       </section>
     </section>

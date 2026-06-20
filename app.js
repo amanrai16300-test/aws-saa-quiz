@@ -37,7 +37,9 @@
       "finalPercentage", "finalWrong", "finalTime", "resultsNote",
       "reviewArea", "historyBar", "historyList", "syncStatus",
       "authEmail", "authPassword", "authLoginBtn", "authSignUpBtn",
-      "authResetBtn", "authLogoutBtn", "authUser", "pauseSavedText"
+      "authResetBtn", "authLogoutBtn", "authUser", "pauseSavedText",
+      "resumeMainQuizBtn", "nextMainQuizBtn", "nextMainPausedBtn",
+      "resumeWrongIntroBtn", "resumeWrongQuizBtn"
     ].forEach(function (id) {
       ui[id] = element(id);
     });
@@ -239,6 +241,12 @@
       if (candidate.returnState) {
         convertItems(candidate.returnState);
       }
+      if (candidate.mainSlot) {
+        convertItems(candidate.mainSlot);
+      }
+      if (candidate.wrongSlot) {
+        convertItems(candidate.wrongSlot);
+      }
     }
 
     convertItems(cloudState);
@@ -282,6 +290,12 @@
 
       if (candidate.returnState) {
         convertItems(candidate.returnState);
+      }
+      if (candidate.mainSlot) {
+        convertItems(candidate.mainSlot);
+      }
+      if (candidate.wrongSlot) {
+        convertItems(candidate.wrongSlot);
       }
     }
 
@@ -1057,13 +1071,57 @@
     ui.resultsCard.classList.toggle("hidden", view !== "results");
     ui.pauseTopBtn.disabled = view !== "quiz";
 
-    ui.returnFromPauseBtn.classList.toggle(
-      "hidden",
-      !state.returnState
-    );
+    updateSessionSwitchButtons();
 
     renderCycleStatus();
     renderHistory();
+  }
+
+  // Inside a wrong-practice session, expose "Resume Main Session" (restore the
+  // saved main slot exactly) and "Start Next Main Session". Both appear on the
+  // in-quiz actions and on the paused wrong-practice screen.
+  function updateSessionSwitchButtons() {
+    var inWrong = state.mode === "wrong";
+    var canResumeMain = inWrong && !!(state.mainSlot || state.returnState);
+
+    // In-quiz buttons (only while actively in the wrong-practice quiz view).
+    var showInQuiz = inWrong && currentView === "quiz";
+    if (ui.resumeMainQuizBtn) {
+      ui.resumeMainQuizBtn.classList.toggle(
+        "hidden",
+        !(showInQuiz && canResumeMain)
+      );
+    }
+    if (ui.nextMainQuizBtn) {
+      ui.nextMainQuizBtn.classList.toggle("hidden", !showInQuiz);
+    }
+
+    // Paused-screen buttons (only while the paused screen shows a wrong session).
+    var showPaused = inWrong && currentView === "paused";
+    if (ui.returnFromPauseBtn) {
+      ui.returnFromPauseBtn.classList.toggle(
+        "hidden",
+        !(showPaused && canResumeMain)
+      );
+    }
+    if (ui.nextMainPausedBtn) {
+      ui.nextMainPausedBtn.classList.toggle("hidden", !showPaused);
+    }
+
+    // Resume saved wrong-practice from the main session (exact position).
+    var canResumeWrong = state.mode === "main" && !!state.wrongSlot;
+    if (ui.resumeWrongIntroBtn) {
+      ui.resumeWrongIntroBtn.classList.toggle(
+        "hidden",
+        !(canResumeWrong && currentView === "intro")
+      );
+    }
+    if (ui.resumeWrongQuizBtn) {
+      ui.resumeWrongQuizBtn.classList.toggle(
+        "hidden",
+        !(canResumeWrong && currentView === "quiz")
+      );
+    }
   }
 
   function stopTimer() {
@@ -1429,7 +1487,7 @@
 
     ui.returnToPreviousBtn.classList.toggle(
       "hidden",
-      !state.returnState
+      !(state.mainSlot || state.returnState)
     );
 
     switchView("results");
@@ -1480,30 +1538,41 @@
     return false;
   }
 
+  // Strip the saved-slot sidecars (and live timer) from a state so we can
+  // store it inside another state's slot without nesting slots recursively.
+  function detachSlots(source) {
+    var snapshot = clone(source);
+    snapshot.lastStartedAt = null;
+    snapshot.returnState = null;
+    delete snapshot.mainSlot;
+    delete snapshot.wrongSlot;
+    return snapshot;
+  }
+
   function startNextMainSession() {
     if (!canReplaceCurrentMain()) {
       return;
     }
 
     stopTimer();
+
+    // Preserve any saved wrong-practice session across the new main session.
+    var savedWrong =
+      state.mode === "wrong"
+        ? detachSlots(state)
+        : (state.wrongSlot ? clone(state.wrongSlot) : null);
+
     state = createMainState(state.tracker);
+    if (savedWrong) {
+      state.wrongSlot = savedWrong;
+    }
+
     saveState();
     ui.reviewArea.classList.add("hidden");
     switchView("quiz");
     renderQuestion();
     startTimer();
     window.scrollTo(0, 0);
-  }
-
-  function returnSnapshotForPractice() {
-    if (state.finished) {
-      return null;
-    }
-
-    var snapshot = clone(state);
-    snapshot.lastStartedAt = null;
-    snapshot.returnState = null;
-    return snapshot;
   }
 
   function startWrongPractice(
@@ -1520,15 +1589,23 @@
 
     stopTimer();
 
-    var returnSnapshot =
-      preserveCurrent ? returnSnapshotForPractice() : null;
+    // Capture the main session to its slot so it can be resumed exactly.
+    var savedMain = null;
+    if (preserveCurrent && state.mode === "main" && !state.finished) {
+      savedMain = detachSlots(state);
+    } else if (state.mainSlot) {
+      savedMain = clone(state.mainSlot);
+    }
 
     state = createWrongPracticeState(
       wrongIds,
       state.tracker,
       sourceHistoryId,
-      returnSnapshot
+      null
     );
+    if (savedMain) {
+      state.mainSlot = savedMain;
+    }
 
     saveState();
     ui.reviewArea.classList.add("hidden");
@@ -1564,7 +1641,73 @@
     );
   }
 
+  // Resume the saved main session from inside a wrong-practice session,
+  // while keeping the current wrong-practice session saved separately.
+  function resumeMainSession() {
+    if (!state.mainSlot) {
+      return;
+    }
+
+    stopTimer();
+
+    var savedWrong =
+      state.mode === "wrong" ? detachSlots(state) : null;
+
+    state = repairState(clone(state.mainSlot));
+    if (savedWrong) {
+      state.wrongSlot = savedWrong;
+    }
+
+    saveState();
+
+    if (state.finished) {
+      showResults();
+    } else if (state.paused) {
+      switchView("paused");
+    } else {
+      switchView("quiz");
+      renderQuestion();
+      startTimer();
+    }
+  }
+
+  // Resume the saved wrong-practice session (from the main session) at its
+  // exact saved position, keeping the current main session saved separately.
+  function resumeWrongSession() {
+    if (!state.wrongSlot) {
+      return;
+    }
+
+    stopTimer();
+
+    var savedMain =
+      state.mode === "main" ? detachSlots(state) : null;
+
+    state = repairState(clone(state.wrongSlot));
+    if (savedMain) {
+      state.mainSlot = savedMain;
+    }
+
+    saveState();
+
+    if (state.finished) {
+      showResults();
+    } else if (state.paused) {
+      switchView("paused");
+    } else {
+      switchView("quiz");
+      renderQuestion();
+      startTimer();
+    }
+  }
+
+  // Backwards-compatible: older states used a single embedded returnState.
   function returnToPreviousSession() {
+    if (state.mainSlot) {
+      resumeMainSession();
+      return;
+    }
+
     if (!state.returnState) {
       return;
     }
@@ -1882,6 +2025,21 @@
       "click",
       returnToPreviousSession
     );
+    if (ui.resumeMainQuizBtn) {
+      ui.resumeMainQuizBtn.addEventListener("click", resumeMainSession);
+    }
+    if (ui.nextMainQuizBtn) {
+      ui.nextMainQuizBtn.addEventListener("click", startNextMainSession);
+    }
+    if (ui.nextMainPausedBtn) {
+      ui.nextMainPausedBtn.addEventListener("click", startNextMainSession);
+    }
+    if (ui.resumeWrongIntroBtn) {
+      ui.resumeWrongIntroBtn.addEventListener("click", resumeWrongSession);
+    }
+    if (ui.resumeWrongQuizBtn) {
+      ui.resumeWrongQuizBtn.addEventListener("click", resumeWrongSession);
+    }
     ui.previousBtn.addEventListener(
       "click",
       previousQuestion
