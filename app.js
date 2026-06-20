@@ -365,6 +365,69 @@
     return shuffle(items);
   }
 
+  // Build { questionId -> cycleNumber } for one completed main-session history
+  // entry, using durable per-question data when present. For older entries
+  // that only recorded which cycles were touched, repair only when the cycle
+  // is unambiguous (the session stayed within a single cycle). Never guess
+  // the cycle of a question from an old cross-boundary session.
+  function completedQuestionCycles(entry) {
+    if (!entry || entry.mode === "wrong") {
+      return null;
+    }
+
+    if (entry.questionCycles && typeof entry.questionCycles === "object") {
+      return entry.questionCycles;
+    }
+
+    var cycles = Array.isArray(entry.cycles) ? unique(entry.cycles) : [];
+    if (cycles.length === 1 && Array.isArray(entry.questionIds)) {
+      var onlyCycle = cycles[0];
+      return entry.questionIds.reduce(function (map, questionId) {
+        map[String(questionId)] = onlyCycle;
+        return map;
+      }, {});
+    }
+
+    // Ambiguous (no per-question data and crosses cycles) -> skip safely.
+    return null;
+  }
+
+  // Treat completed main-session history rows as durable proof that those
+  // questions were already assigned. Remove any such question (for the
+  // tracker's CURRENT cycle) from unusedIndices so a stale quiz_progress
+  // payload cannot make completed-session questions repeat. The active
+  // unfinished main session is never reset or duplicated.
+  function reconcileTrackerWithHistory(history) {
+    if (!state || !state.tracker) {
+      return false;
+    }
+
+    var currentCycle = state.tracker.cycleNumber;
+    var assignedIds = {};
+
+    (history || []).forEach(function (entry) {
+      var map = completedQuestionCycles(entry);
+      if (!map) {
+        return;
+      }
+      Object.keys(map).forEach(function (questionId) {
+        if (map[questionId] === currentCycle) {
+          assignedIds[questionId] = true;
+        }
+      });
+    });
+
+    var before = state.tracker.unusedIndices.length;
+    state.tracker.unusedIndices = state.tracker.unusedIndices.filter(
+      function (questionIndex) {
+        var question = QUESTIONS[questionIndex];
+        return !(question && assignedIds[String(question.id)]);
+      }
+    );
+
+    return state.tracker.unusedIndices.length !== before;
+  }
+
   function createOptionOrders(items) {
     var optionOrders = {};
     items.forEach(function (item) {
@@ -921,6 +984,15 @@
         var localHistory = loadHistory();
         var merged = mergeHistory(localHistory, rows);
         persistLocalHistory(merged);
+
+        // Durable history rows just loaded -> repair a possibly stale tracker
+        // so completed-session questions don't reappear. Saves the corrected
+        // tracker without resetting the active unfinished main session.
+        if (reconcileTrackerWithHistory(merged)) {
+          saveState();
+          renderCycleStatus();
+        }
+
         renderHistory();
 
         if (!historyMigrated() && sync.saveHistoryEntries) {
@@ -1413,6 +1485,15 @@
       questionIds: state.items.map(function (item) {
         return QUESTIONS[item.questionIndex].id;
       }),
+      // Per-question cycle map so a cross-boundary session can be repaired
+      // exactly later, even after a stale quiz_progress overwrite.
+      questionCycles: state.items.reduce(function (map, item) {
+        var question = QUESTIONS[item.questionIndex];
+        if (question) {
+          map[String(question.id)] = item.cycleNumber;
+        }
+        return map;
+      }, {}),
       wrongIds: wrongIds
     };
 
