@@ -10,6 +10,7 @@
   var HISTORY_KEY = STORAGE_KEY + "_history";
   var SYNC_META_KEY = STORAGE_KEY + "_sync_meta";
   var CLIENT_ID_KEY = STORAGE_KEY + "_client_id";
+  var HISTORY_MIGRATED_KEY = STORAGE_KEY + "_history_migrated";
   var timerHandle = null;
   var state = null;
   var ui = {};
@@ -866,6 +867,62 @@
     renderSyncStatus("Saved");
   }
 
+  function persistLocalHistory(history) {
+    if (!storageAvailable) {
+      return;
+    }
+    try {
+      localStorage.setItem(
+        HISTORY_KEY,
+        JSON.stringify(mainOnlyHistory(history).slice(-120))
+      );
+    } catch (error) {}
+  }
+
+  function historyMigrated() {
+    if (!storageAvailable) {
+      return false;
+    }
+    return localStorage.getItem(HISTORY_MIGRATED_KEY) === "1";
+  }
+
+  function markHistoryMigrated() {
+    if (!storageAvailable) {
+      return;
+    }
+    try {
+      localStorage.setItem(HISTORY_MIGRATED_KEY, "1");
+    } catch (error) {}
+  }
+
+  // Pull append-only quiz_history rows, merge into local cache, and
+  // one-time migrate pre-existing local (quiz_progress-sourced) entries up.
+  function syncHistoryRows() {
+    if (!sync || !sync.user || !sync.loadHistoryRows) {
+      return Promise.resolve();
+    }
+
+    return sync
+      .loadHistoryRows()
+      .then(function (rows) {
+        var localHistory = loadHistory();
+        var merged = mergeHistory(localHistory, rows);
+        persistLocalHistory(merged);
+        renderHistory();
+
+        if (!historyMigrated() && sync.saveHistoryEntries) {
+          return sync
+            .saveHistoryEntries(mainOnlyHistory(merged))
+            .then(function () {
+              markHistoryMigrated();
+            })
+            .catch(function () {});
+        }
+        return null;
+      })
+      .catch(function () {});
+  }
+
   function authValues() {
     return {
       email: ui.authEmail ? ui.authEmail.value.trim() : "",
@@ -901,6 +958,7 @@
     });
     sync.onRemoteChange(function (payload) {
       applyRemotePayload(payload);
+      syncHistoryRows();
       renderAuth();
     });
     sync
@@ -908,9 +966,14 @@
       .then(function () {
         renderAuth();
         if (sync.user) {
-          return sync.loadRemote().then(function (remote) {
-            applyRemotePayload(remote ? remote.payload : null);
-          });
+          return sync
+            .loadRemote()
+            .then(function (remote) {
+              applyRemotePayload(remote ? remote.payload : null);
+            })
+            .then(function () {
+              return syncHistoryRows();
+            });
         }
         return null;
       })
@@ -1272,11 +1335,11 @@
 
   function addHistoryEntry() {
     if (state.mode !== "main") {
-      return;
+      return null;
     }
 
     if (state.historyRecorded) {
-      return;
+      return null;
     }
 
     var history = loadHistory();
@@ -1284,7 +1347,7 @@
     var correct = correctCount();
     var wrongIds = wrongQuestionIds();
 
-    history.push({
+    var entry = {
       id: createHistoryId(),
       timestamp: Date.now(),
       date: new Date().toLocaleString(),
@@ -1302,19 +1365,25 @@
         return QUESTIONS[item.questionIndex].id;
       }),
       wrongIds: wrongIds
-    });
+    };
+
+    history.push(entry);
 
     saveHistory(history);
     state.historyRecorded = true;
+    return entry;
   }
 
   function finishSession() {
     stopTimer();
     state.finished = true;
     state.paused = false;
-    addHistoryEntry();
+    var entry = addHistoryEntry();
     saveState();
     flushCloudSave();
+    if (entry && sync && sync.user && sync.saveHistoryEntry) {
+      sync.saveHistoryEntry(entry).catch(function () {});
+    }
     showResults();
   }
 

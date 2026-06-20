@@ -2,6 +2,7 @@
   "use strict";
 
   var TABLE_NAME = "quiz_progress";
+  var HISTORY_TABLE = "quiz_history";
   var DEFAULT_STATUS = "Offline";
   var CONFIG = window.SUPABASE_QUIZ_CONFIG || {};
   var hasConfig =
@@ -62,6 +63,15 @@
       },
       loadRemote: function () {
         return Promise.resolve(null);
+      },
+      saveHistoryEntry: function () {
+        return Promise.resolve({ status: "offline" });
+      },
+      saveHistoryEntries: function () {
+        return Promise.resolve({ status: "offline" });
+      },
+      loadHistoryRows: function () {
+        return Promise.resolve([]);
       }
     };
   }
@@ -213,6 +223,66 @@
         });
     }
 
+    function historyRowFromEntry(entry) {
+      return {
+        id: String(entry.id),
+        user_id: currentUser.id,
+        entry: entry,
+        timestamp_ms: Number(entry.timestamp) || 0
+      };
+    }
+
+    function saveHistoryEntries(entries) {
+      if (!currentUser) {
+        return Promise.resolve({ status: "offline" });
+      }
+
+      var rows = (entries || [])
+        .filter(function (entry) {
+          return entry && entry.id && entry.mode !== "wrong";
+        })
+        .map(historyRowFromEntry);
+
+      if (!rows.length) {
+        return Promise.resolve({ status: "empty" });
+      }
+
+      return client
+        .from(HISTORY_TABLE)
+        .upsert(rows, { onConflict: "id" })
+        .then(function (result) {
+          if (result.error) {
+            throw result.error;
+          }
+          return { status: "saved", count: rows.length };
+        });
+    }
+
+    function saveHistoryEntry(entry) {
+      return saveHistoryEntries([entry]);
+    }
+
+    function loadHistoryRows() {
+      if (!currentUser) {
+        return Promise.resolve([]);
+      }
+
+      return client
+        .from(HISTORY_TABLE)
+        .select("entry")
+        .eq("user_id", currentUser.id)
+        .then(function (result) {
+          if (result.error) {
+            throw result.error;
+          }
+          return (result.data || [])
+            .map(function (row) {
+              return row.entry;
+            })
+            .filter(Boolean);
+        });
+    }
+
     function upsertPayload(payload) {
       if (!currentUser) {
         emitStatus("Offline");
@@ -353,7 +423,10 @@
       },
       queueSave: queueSave,
       saveNow: saveNow,
-      loadRemote: readRow
+      loadRemote: readRow,
+      saveHistoryEntry: saveHistoryEntry,
+      saveHistoryEntries: saveHistoryEntries,
+      loadHistoryRows: loadHistoryRows
     };
   }
 
