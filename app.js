@@ -549,7 +549,7 @@
 
   function mainOnlyHistory(history) {
     return (history || []).filter(function (entry) {
-      return entry && entry.mode === "main";
+      return entry && entry.mode !== "wrong";
     });
   }
 
