@@ -5,6 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AWS SAA-C03 Random Exam 1-684</title>
   <link rel="stylesheet" href="style.css">
+  <script>
+    // Set theme before first paint to avoid a flash of the wrong theme.
+    (function () {
+      try {
+        var KEY = "aws_saa_c03_theme";
+        var saved = localStorage.getItem(KEY);
+        var theme =
+          saved === "light" || saved === "dark"
+            ? saved
+            : (window.matchMedia &&
+               window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (error) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
 </head>
 <body>
   <noscript>
@@ -33,6 +52,7 @@
           <span id="syncStatus" class="sync-status">Offline</span>
         </div>
       </div>
+      <button id="themeToggleBtn" class="theme-toggle" type="button" aria-pressed="false">🌙 Dark</button>
       <button id="pauseTopBtn" class="ghost" disabled>Pause</button>
     </div>
   </header>
