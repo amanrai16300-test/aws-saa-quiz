@@ -164,7 +164,7 @@
       clientId: clientId(),
       updatedAtMs: localUpdatedAt || Date.now(),
       state: stateForCloud(state),
-      history: loadHistory()
+      history: mergeHistory(loadHistory(), [])
     };
   }
 
@@ -553,6 +553,72 @@
     });
   }
 
+  function entryScore(entry) {
+    var keys = 0;
+    for (var key in entry) {
+      if (
+        Object.prototype.hasOwnProperty.call(entry, key) &&
+        entry[key] !== null &&
+        entry[key] !== undefined &&
+        entry[key] !== ""
+      ) {
+        keys += 1;
+      }
+    }
+    return keys;
+  }
+
+  function preferEntry(existing, incoming) {
+    if (!existing) {
+      return incoming;
+    }
+    if (!incoming) {
+      return existing;
+    }
+
+    var existingTs = Number(existing.timestamp) || 0;
+    var incomingTs = Number(incoming.timestamp) || 0;
+
+    if (incomingTs !== existingTs) {
+      return incomingTs > existingTs ? incoming : existing;
+    }
+
+    return entryScore(incoming) > entryScore(existing) ? incoming : existing;
+  }
+
+  function mergeHistory(localHistory, remoteHistory) {
+    var byId = {};
+    var noId = [];
+
+    function absorb(history) {
+      (history || []).forEach(function (entry) {
+        if (!entry || entry.mode === "wrong") {
+          return;
+        }
+        if (!entry.id) {
+          noId.push(entry);
+          return;
+        }
+        var key = String(entry.id);
+        byId[key] = preferEntry(byId[key], entry);
+      });
+    }
+
+    absorb(localHistory);
+    absorb(remoteHistory);
+
+    var merged = noId.slice();
+    Object.keys(byId).forEach(function (key) {
+      merged.push(byId[key]);
+    });
+
+    merged.sort(function (a, b) {
+      return (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0);
+    });
+
+    return merged;
+  }
+
   function saveHistory(history) {
     if (!storageAvailable) {
       return;
@@ -788,7 +854,10 @@
 
     writeStateAndHistory(
       remoteState,
-      Array.isArray(payload.history) ? payload.history : [],
+      mergeHistory(
+        loadHistory(),
+        Array.isArray(payload.history) ? payload.history : []
+      ),
       payload.updatedAtMs
     );
     refreshCurrentView();
@@ -821,6 +890,11 @@
     }
 
     sync = window.QuizSupabaseSync.create();
+    if (sync.setHistoryMerger) {
+      sync.setHistoryMerger(function (cloudHistory, localHistory) {
+        return mergeHistory(localHistory, cloudHistory);
+      });
+    }
     sync.onStatusChange(function (status) {
       renderSyncStatus(status);
       renderAuth();

@@ -29,6 +29,7 @@
       status: DEFAULT_STATUS,
       onStatusChange: function () {},
       onRemoteChange: function () {},
+      setHistoryMerger: function () {},
       init: function () {
         this.emitStatus(DEFAULT_STATUS);
         return Promise.resolve(null);
@@ -81,6 +82,29 @@
     var currentUser = null;
     var saving = false;
     var channel = null;
+    var historyMerger = null;
+
+    function mergeWithCloud(payload, remotePayload) {
+      if (!historyMerger || !payload) {
+        return payload;
+      }
+
+      var localHistory = Array.isArray(payload.history)
+        ? payload.history
+        : [];
+      var cloudHistory =
+        remotePayload && Array.isArray(remotePayload.history)
+          ? remotePayload.history
+          : [];
+      var merged = historyMerger(cloudHistory, localHistory);
+
+      if (!Array.isArray(merged)) {
+        return payload;
+      }
+
+      payload.history = merged;
+      return payload;
+    }
 
     function emitStatus(status) {
       if (statusHandler) {
@@ -211,6 +235,8 @@
             return { status: "remote-newer", payload: remote.payload };
           }
 
+          mergeWithCloud(payload, remote ? remote.payload : null);
+
           return client
             .from(TABLE_NAME)
             .upsert({
@@ -277,6 +303,9 @@
       },
       onRemoteChange: function (handler) {
         remoteHandler = handler;
+      },
+      setHistoryMerger: function (merger) {
+        historyMerger = merger;
       },
       init: function (payloadReader) {
         getPayload = payloadReader;
