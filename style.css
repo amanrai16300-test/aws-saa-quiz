@@ -65,17 +65,27 @@
 }
 
 .theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
   min-height: 42px;
-  padding: 9px 12px;
+  padding: 0;
   color: var(--text);
   background: var(--chip-bg);
   border: 1px solid var(--line);
   border-radius: 12px;
-  font: inherit;
-  font-weight: 800;
   cursor: pointer;
-  white-space: nowrap;
 }
+
+.theme-toggle svg { display: block; }
+
+/* Light mode: show moon (action = go dark). Dark mode: show sun. */
+.theme-toggle .icon-sun { display: none; }
+[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
+[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
 
 * { box-sizing: border-box; }
 
@@ -454,6 +464,16 @@ pre.small {
   }
   #questionText { font-size: 18px; }
   button { width: 100%; }
+
+  /* Keep theme toggle pinned top-right; don't push title/auth to middle. */
+  .topbar { position: sticky; padding-right: 64px; }
+  .theme-toggle {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 42px;
+    margin: 0;
+  }
   .history-heading,
   .history-card-head {
     align-items: flex-start;

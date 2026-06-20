@@ -11,7 +11,6 @@
   var SYNC_META_KEY = STORAGE_KEY + "_sync_meta";
   var CLIENT_ID_KEY = STORAGE_KEY + "_client_id";
   var HISTORY_MIGRATED_KEY = STORAGE_KEY + "_history_migrated";
-  var THEME_KEY = "aws_saa_c03_theme";
   var timerHandle = null;
   var state = null;
   var ui = {};
@@ -38,8 +37,7 @@
       "finalPercentage", "finalWrong", "finalTime", "resultsNote",
       "reviewArea", "historyBar", "historyList", "syncStatus",
       "authEmail", "authPassword", "authLoginBtn", "authSignUpBtn",
-      "authResetBtn", "authLogoutBtn", "authUser", "pauseSavedText",
-      "themeToggleBtn"
+      "authResetBtn", "authLogoutBtn", "authUser", "pauseSavedText"
     ].forEach(function (id) {
       ui[id] = element(id);
     });
@@ -1848,44 +1846,10 @@
     );
   }
 
-  function currentTheme() {
-    return document.documentElement.getAttribute("data-theme") === "dark"
-      ? "dark"
-      : "light";
-  }
-
-  function renderThemeToggle() {
-    if (!ui.themeToggleBtn) {
-      return;
-    }
-
-    var dark = currentTheme() === "dark";
-    ui.themeToggleBtn.textContent = dark ? "☀️ Light" : "🌙 Dark";
-    ui.themeToggleBtn.setAttribute("aria-pressed", dark ? "true" : "false");
-  }
-
-  function applyTheme(theme, persist) {
-    var next = theme === "dark" ? "dark" : "light";
-    document.documentElement.setAttribute("data-theme", next);
-
-    if (persist) {
-      try {
-        localStorage.setItem(THEME_KEY, next);
-      } catch (error) {}
-    }
-
-    renderThemeToggle();
-  }
-
-  function toggleTheme() {
-    applyTheme(currentTheme() === "dark" ? "light" : "dark", true);
-  }
+  // Theme toggle is handled by a self-contained module in index.html's
+  // <head> so it binds reliably in Safari standalone, independent of quiz boot.
 
   function addHandlers() {
-    if (ui.themeToggleBtn) {
-      ui.themeToggleBtn.addEventListener("click", toggleTheme);
-    }
-
     ui.continueBtn.addEventListener(
       "click",
       continueCurrent
@@ -1996,7 +1960,6 @@
 
   function boot() {
     cacheElements();
-    renderThemeToggle();
 
     if (POOL_SIZE !== 684) {
       ui.diagnostic.classList.remove("hidden");
