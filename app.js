@@ -38,8 +38,7 @@
       "reviewArea", "historyBar", "historyList", "syncStatus",
       "authEmail", "authPassword", "authLoginBtn", "authSignUpBtn",
       "authResetBtn", "authLogoutBtn", "authUser", "pauseSavedText",
-      "resumeMainQuizBtn", "nextMainQuizBtn", "nextMainPausedBtn",
-      "resumeWrongIntroBtn", "resumeWrongQuizBtn"
+      "resumeMainQuizBtn", "resumeWrongIntroBtn", "resumeWrongQuizBtn"
     ].forEach(function (id) {
       ui[id] = element(id);
     });
@@ -1082,30 +1081,22 @@
   // in-quiz actions and on the paused wrong-practice screen.
   function updateSessionSwitchButtons() {
     var inWrong = state.mode === "wrong";
-    var canResumeMain = inWrong && !!(state.mainSlot || state.returnState);
+    var label = validMainSlot(state.mainSlot)
+      ? "Resume Main Session"
+      : "Start New Main Session";
 
-    // In-quiz buttons (only while actively in the wrong-practice quiz view).
+    // Single main-action button in-quiz (while in the wrong-practice quiz view).
     var showInQuiz = inWrong && currentView === "quiz";
     if (ui.resumeMainQuizBtn) {
-      ui.resumeMainQuizBtn.classList.toggle(
-        "hidden",
-        !(showInQuiz && canResumeMain)
-      );
-    }
-    if (ui.nextMainQuizBtn) {
-      ui.nextMainQuizBtn.classList.toggle("hidden", !showInQuiz);
+      ui.resumeMainQuizBtn.textContent = label;
+      ui.resumeMainQuizBtn.classList.toggle("hidden", !showInQuiz);
     }
 
-    // Paused-screen buttons (only while the paused screen shows a wrong session).
+    // Single main-action button on the paused wrong-practice screen.
     var showPaused = inWrong && currentView === "paused";
     if (ui.returnFromPauseBtn) {
-      ui.returnFromPauseBtn.classList.toggle(
-        "hidden",
-        !(showPaused && canResumeMain)
-      );
-    }
-    if (ui.nextMainPausedBtn) {
-      ui.nextMainPausedBtn.classList.toggle("hidden", !showPaused);
+      ui.returnFromPauseBtn.textContent = label;
+      ui.returnFromPauseBtn.classList.toggle("hidden", !showPaused);
     }
 
     // Resume saved wrong-practice from the main session (exact position).
@@ -1487,7 +1478,7 @@
 
     ui.returnToPreviousBtn.classList.toggle(
       "hidden",
-      !(state.mainSlot || state.returnState)
+      !(validMainSlot(state.mainSlot) || state.returnState)
     );
 
     switchView("results");
@@ -1641,10 +1632,24 @@
     );
   }
 
+  // A resumable main session must be an unfinished, valid main-mode session.
+  // Never treat wrongSlot, returnState, or historical/wrong state as main.
+  function validMainSlot(candidate) {
+    if (
+      candidate &&
+      candidate.mode === "main" &&
+      !candidate.finished &&
+      validState(candidate)
+    ) {
+      return candidate;
+    }
+    return null;
+  }
+
   // Resume the saved main session from inside a wrong-practice session,
   // while keeping the current wrong-practice session saved separately.
   function resumeMainSession() {
-    if (!state.mainSlot) {
+    if (!validMainSlot(state.mainSlot)) {
       return;
     }
 
@@ -1668,6 +1673,17 @@
       switchView("quiz");
       renderQuestion();
       startTimer();
+    }
+  }
+
+  // Single main-action button: resume a valid saved main session if one
+  // exists, otherwise start a fresh 64-question main session. Either path
+  // preserves the current wrong-practice slot.
+  function mainActionClick() {
+    if (validMainSlot(state.mainSlot)) {
+      resumeMainSession();
+    } else {
+      startNextMainSession();
     }
   }
 
@@ -1703,7 +1719,7 @@
 
   // Backwards-compatible: older states used a single embedded returnState.
   function returnToPreviousSession() {
-    if (state.mainSlot) {
+    if (validMainSlot(state.mainSlot)) {
       resumeMainSession();
       return;
     }
@@ -2023,16 +2039,10 @@
     );
     ui.returnFromPauseBtn.addEventListener(
       "click",
-      returnToPreviousSession
+      mainActionClick
     );
     if (ui.resumeMainQuizBtn) {
-      ui.resumeMainQuizBtn.addEventListener("click", resumeMainSession);
-    }
-    if (ui.nextMainQuizBtn) {
-      ui.nextMainQuizBtn.addEventListener("click", startNextMainSession);
-    }
-    if (ui.nextMainPausedBtn) {
-      ui.nextMainPausedBtn.addEventListener("click", startNextMainSession);
+      ui.resumeMainQuizBtn.addEventListener("click", mainActionClick);
     }
     if (ui.resumeWrongIntroBtn) {
       ui.resumeWrongIntroBtn.addEventListener("click", resumeWrongSession);
