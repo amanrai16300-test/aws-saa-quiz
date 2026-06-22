@@ -755,7 +755,7 @@ window.QUIZ_QUESTIONS = [
       }
     ],
     "correct": [
-      "B"
+      "A"
     ],
     "multi": false,
     "answerSource": "uploaded_complete_answer_key_q1_684"
