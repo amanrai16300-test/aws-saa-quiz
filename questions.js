@@ -8504,7 +8504,7 @@ window.QUIZ_QUESTIONS = [
       }
     ],
     "correct": [
-      "B",
+      "A",
       "C"
     ],
     "multi": true,
@@ -8942,7 +8942,7 @@ window.QUIZ_QUESTIONS = [
       }
     ],
     "correct": [
-      "C"
+      "D"
     ],
     "multi": false,
     "answerSource": "uploaded_complete_answer_key_q1_684"
