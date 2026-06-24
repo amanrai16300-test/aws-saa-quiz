@@ -711,6 +711,127 @@
     } catch (error) {}
   }
 
+  // Count answered questions in a candidate state (further-progressed wins
+  // a tie between two valid unfinished sessions). Missing submitted -> 0.
+  function answeredInState(candidate) {
+    if (!candidate || !candidate.submitted) {
+      return 0;
+    }
+    return Object.keys(candidate.submitted).length;
+  }
+
+  // Pull the best valid unfinished MAIN session out of one side. A side can
+  // carry an unfinished main either as its visible state (mode === "main")
+  // or parked in its mainSlot. Returns the validated candidate or null.
+  // Never returns wrong-practice or legacy returnState as main.
+  function mainFromSide(sideState) {
+    if (!sideState) {
+      return null;
+    }
+    return (
+      validMainSlot(sideState) ||
+      validMainSlot(sideState.mainSlot) ||
+      null
+    );
+  }
+
+  // Pull the best valid unfinished WRONG-practice session out of one side,
+  // either as the visible state or parked in wrongSlot.
+  function wrongFromSide(sideState) {
+    if (!sideState) {
+      return null;
+    }
+    return (
+      validWrongSlot(sideState) ||
+      validWrongSlot(sideState.wrongSlot) ||
+      null
+    );
+  }
+
+  // Choose the surviving slot between local and remote candidates of the same
+  // kind. Tie-break: prefer the further-progressed (more answered) session;
+  // on equal progress fall back to whichever side saved more recently. A null
+  // candidate on one side NEVER deletes a valid candidate on the other side.
+  function pickSlot(localCandidate, remoteCandidate, localTs, remoteTs) {
+    if (!localCandidate) {
+      return remoteCandidate || null;
+    }
+    if (!remoteCandidate) {
+      return localCandidate;
+    }
+
+    var localAnswered = answeredInState(localCandidate);
+    var remoteAnswered = answeredInState(remoteCandidate);
+
+    if (localAnswered !== remoteAnswered) {
+      return localAnswered > remoteAnswered ? localCandidate : remoteCandidate;
+    }
+
+    return (Number(remoteTs) || 0) > (Number(localTs) || 0)
+      ? remoteCandidate
+      : localCandidate;
+  }
+
+  // Merge local and remote into a single durable state without losing an
+  // unfinished main or wrong session from EITHER side.
+  //
+  //  - The visible base is the newer side (preserves existing newest-wins UX).
+  //  - The surviving unfinished main is chosen independently across both sides
+  //    and reattached as base.mainSlot (cleared only when the base itself IS
+  //    that main). Same for wrong-practice via base.wrongSlot.
+  //  - A finished wrong-practice base can therefore never erase an unfinished
+  //    main: the main is preserved in mainSlot regardless of which side it is.
+  //  - A remote payload missing mainSlot cannot delete a valid local main.
+  function mergeActiveState(localState, remoteState, localTs, remoteTs) {
+    var base =
+      (Number(remoteTs) || 0) >= (Number(localTs) || 0)
+        ? clone(remoteState)
+        : clone(localState);
+
+    var mainCandidate = pickSlot(
+      mainFromSide(localState),
+      mainFromSide(remoteState),
+      localTs,
+      remoteTs
+    );
+    var wrongCandidate = pickSlot(
+      wrongFromSide(localState),
+      wrongFromSide(remoteState),
+      localTs,
+      remoteTs
+    );
+
+    // Flatten a survivor before parking it so slots never nest recursively
+    // across repeated merges (a parked main must not carry its own slots).
+    function flattenForSlot(candidate) {
+      var snapshot = clone(candidate);
+      snapshot.lastStartedAt = null;
+      delete snapshot.mainSlot;
+      delete snapshot.wrongSlot;
+      return snapshot;
+    }
+
+    // If the base IS the surviving main/wrong, keep it visible and drop the
+    // redundant slot; otherwise park the survivor in its slot.
+    if (mainCandidate && validMainSlot(base) === base) {
+      delete base.mainSlot;
+    } else if (mainCandidate) {
+      base.mainSlot = flattenForSlot(mainCandidate);
+    } else {
+      delete base.mainSlot;
+    }
+
+    if (wrongCandidate && validWrongSlot(base) === base) {
+      delete base.wrongSlot;
+    } else if (wrongCandidate) {
+      base.wrongSlot = flattenForSlot(wrongCandidate);
+    } else {
+      delete base.wrongSlot;
+    }
+
+    return base;
+  }
+
   function writeStateAndHistory(nextState, nextHistory, updatedAtMs) {
     applyingRemote = true;
 
@@ -916,31 +1037,48 @@
       return;
     }
 
-    if (
-      localUpdatedAt &&
-      payload.updatedAtMs &&
-      localUpdatedAt > payload.updatedAtMs
-    ) {
-      sync.queueSave();
-      return;
-    }
+    var remoteTs = Number(payload.updatedAtMs) || 0;
+    var localTs = Number(localUpdatedAt) || 0;
+    var localState = state;
+
+    // Merge first so an unfinished main/wrong session from EITHER side is
+    // preserved even when the other side is newer. A finished wrong-practice
+    // payload (or one missing mainSlot) can no longer overwrite an unfinished
+    // main: the survivor is parked in mainSlot.
+    var merged = mergeActiveState(
+      localState,
+      remoteState,
+      localTs,
+      remoteTs
+    );
 
     applyingRemote = true;
     stopTimer();
     applyingRemote = false;
 
+    // The visible base follows newest-wins, but the merged slots are durable
+    // regardless of which side is newer, so keep our own updatedAt when local
+    // is ahead and re-save the reconciled payload upward.
+    var baseTs = Math.max(localTs, remoteTs) || Date.now();
+    var localAhead = localTs > remoteTs;
+
     writeStateAndHistory(
-      remoteState,
+      merged,
       mergeHistory(
         loadHistory(),
         Array.isArray(payload.history) ? payload.history : []
       ),
-      payload.updatedAtMs
+      baseTs
     );
     refreshCurrentView();
     renderCycleStatus();
     renderHistory();
-    renderSyncStatus("Saved");
+
+    if (localAhead && sync && sync.user) {
+      sync.queueSave();
+    } else {
+      renderSyncStatus("Saved");
+    }
   }
 
   function persistLocalHistory(history) {
@@ -1719,6 +1857,20 @@
     if (
       candidate &&
       candidate.mode === "main" &&
+      !candidate.finished &&
+      validState(candidate)
+    ) {
+      return candidate;
+    }
+    return null;
+  }
+
+  // A resumable wrong-practice session must be an unfinished, valid wrong-mode
+  // session. Used only for the wrongSlot side; never confused with main.
+  function validWrongSlot(candidate) {
+    if (
+      candidate &&
+      candidate.mode === "wrong" &&
       !candidate.finished &&
       validState(candidate)
     ) {
