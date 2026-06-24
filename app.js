@@ -18,6 +18,11 @@
   var currentView = "intro";
   var localUpdatedAt = 0;
   var applyingRemote = false;
+  // Cloud hydration gate. On a signed-in startup this stays false until the
+  // first remote payload has been applied, so a fresh PWA / Home Screen
+  // shortcut (separate localStorage) cannot push stale local state up before
+  // authoritative cloud state loads. True when local-only / not signed in.
+  var cloudReady = true;
 
   function element(id) {
     return document.getElementById(id);
@@ -172,6 +177,11 @@
 
   function queueCloudSave() {
     if (!applyingRemote && sync && sync.user) {
+      // Defer cloud push until first hydration; localStorage already saved.
+      if (!cloudReady) {
+        renderSyncStatus("Saving");
+        return;
+      }
       sync.queueSave();
     } else {
       renderSyncStatus(sync && sync.user ? "Saved" : "Offline");
@@ -179,7 +189,7 @@
   }
 
   function flushCloudSave() {
-    if (!applyingRemote && sync && sync.user) {
+    if (!applyingRemote && sync && sync.user && cloudReady) {
       sync.saveNow();
     }
   }
@@ -1089,11 +1099,25 @@
   }
 
   function applyRemotePayload(payload) {
+    // First signed-in hydration: cloud is authoritative. A fresh PWA / Home
+    // Screen shortcut has its own localStorage and may carry a stale (or
+    // Date.now()-seeded) updatedAt that would otherwise out-rank real cloud
+    // state. Treat local timestamp as 0 for this first apply so remote wins
+    // base + recency ties; genuine local unfinished sessions still survive as
+    // merge candidates (parked in their slot), never pushing stale local up.
+    // Every return path below opens the gate so saving can never stay stuck.
+    var firstHydration = !!(sync && sync.user && !cloudReady);
+
     // Own echo: a payload we just wrote (init readback, token refresh, or a
     // realtime/readback round-trip) carries our own clientId. Re-merging and
     // re-saving it bumps updatedAt and re-queues another save, which echoes
     // again -> the "Saved"/"Saving" oscillation. Never re-process our own row.
+    // An own-echo on first hydration still means cloud holds our data, so the
+    // gate may open.
     if (payload && payload.clientId && payload.clientId === clientId()) {
+      if (firstHydration) {
+        cloudReady = true;
+      }
       renderSyncStatus(sync && sync.user ? "Saved" : "Offline");
       return;
     }
@@ -1103,6 +1127,11 @@
       : null;
 
     if (!payload || !remoteState || !validState(remoteState)) {
+      // No usable remote row (e.g. brand-new account): local is authoritative.
+      // Open the gate, then let the deferred local state save up normally.
+      if (firstHydration) {
+        cloudReady = true;
+      }
       if (sync && sync.user) {
         sync.queueSave();
       }
@@ -1110,7 +1139,7 @@
     }
 
     var remoteTs = Number(payload.updatedAtMs) || 0;
-    var localTs = Number(localUpdatedAt) || 0;
+    var localTs = firstHydration ? 0 : Number(localUpdatedAt) || 0;
     var localState = state;
 
     // Merge first so an unfinished main/wrong session from EITHER side is
@@ -1142,6 +1171,11 @@
       JSON.stringify(mainOnlyHistory(loadHistory()));
 
     if (!localAhead && sameState && sameHistory) {
+      // Hydration completed (nothing to change) -> open the save gate so
+      // subsequent local edits can sync normally.
+      if (firstHydration) {
+        cloudReady = true;
+      }
       renderSyncStatus(sync && sync.user ? "Saved" : "Offline");
       return;
     }
@@ -1159,6 +1193,11 @@
     refreshCurrentView();
     renderCycleStatus();
     renderHistory();
+
+    // First remote apply done: cloud is now hydrated, allow normal saving.
+    if (firstHydration) {
+      cloudReady = true;
+    }
 
     if (localAhead && sync && sync.user) {
       sync.queueSave();
@@ -1256,6 +1295,21 @@
     }
 
     sync = window.QuizSupabaseSync.create();
+
+    // Close the save gate up front: until we know whether this is a signed-in
+    // session AND its cloud state has hydrated, no local (possibly stale PWA)
+    // state may be pushed. Opened on init-resolve for local-only, or after the
+    // first remote apply for signed-in sessions.
+    cloudReady = false;
+    if (sync.setSaveGate) {
+      sync.setSaveGate(function () {
+        return cloudReady;
+      });
+    } else {
+      // No gate support (noop sync) -> nothing to defer.
+      cloudReady = true;
+    }
+
     if (sync.setHistoryMerger) {
       sync.setHistoryMerger(function (cloudHistory, localHistory) {
         return mergeHistory(localHistory, cloudHistory);
@@ -1281,15 +1335,20 @@
           return sync
             .loadRemote()
             .then(function (remote) {
+              // First remote apply opens the gate (authoritative hydration).
               applyRemotePayload(remote ? remote.payload : null);
             })
             .then(function () {
               return syncHistoryRows();
             });
         }
+        // Not signed in: no cloud to wait for, allow local saving.
+        cloudReady = true;
         return null;
       })
       .catch(function () {
+        // Init failed: don't strand the gate closed for a local-only user.
+        cloudReady = true;
         renderSyncStatus("Sync error");
       });
   }
@@ -1318,10 +1377,14 @@
       return;
     }
 
+    // New sign-in: re-close the gate so this device's cloud state hydrates
+    // authoritatively before any local state is pushed up.
+    cloudReady = false;
     renderSyncStatus("Saving");
     sync.login(values.email, values.password)
       .then(handleAuthError)
       .catch(function (error) {
+        cloudReady = true;
         handleAuthError({ error: error });
       });
   }
@@ -1335,10 +1398,13 @@
     sync.logout()
       .then(function (result) {
         handleAuthError(result);
+        // Local-only from here: allow offline saving.
+        cloudReady = true;
         renderAuth();
         renderSyncStatus("Offline");
       })
       .catch(function (error) {
+        cloudReady = true;
         handleAuthError({ error: error });
       });
   }

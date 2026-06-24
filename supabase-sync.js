@@ -32,6 +32,7 @@
       onRemoteChange: function () {},
       setHistoryMerger: function () {},
       setPayloadVerifier: function () {},
+      setSaveGate: function () {},
       init: function () {
         this.emitStatus(DEFAULT_STATUS);
         return Promise.resolve(null);
@@ -95,6 +96,15 @@
     var channel = null;
     var historyMerger = null;
     var payloadVerifier = null;
+    var saveGate = null;
+
+    // A save gate lets the host defer ALL cloud pushes until it is ready
+    // (e.g. until first remote hydration completes on a fresh PWA), so stale
+    // local state cannot be uploaded before authoritative cloud state loads.
+    // No gate set => saves always allowed (back-compat).
+    function saveAllowed() {
+      return !saveGate || saveGate();
+    }
 
     function mergeWithCloud(payload, remotePayload) {
       if (!historyMerger || !payload) {
@@ -171,6 +181,7 @@
             }
 
             if (
+              saveAllowed() &&
               localPayload &&
               localPayload.updatedAtMs &&
               row.updatedAtMs &&
@@ -180,6 +191,9 @@
               return;
             }
 
+            // While the save gate is closed (pre-hydration), never push local
+            // up from this branch. Hand the remote row to the host instead so
+            // hydration reconciles authoritatively.
             emitRemote(row.payload);
           }
         )
@@ -352,6 +366,11 @@
       if (!getPayload || saving) {
         return Promise.resolve({ status: saving ? "busy" : "empty" });
       }
+      // Gate closed: defer the push (no upsert), so stale local cannot reach
+      // the cloud before hydration. Never write a null/empty payload.
+      if (!saveAllowed()) {
+        return Promise.resolve({ status: "deferred" });
+      }
       clearTimeout(saveTimer);
       saveTimer = null;
       return upsertPayload(getPayload());
@@ -360,6 +379,11 @@
     function queueSave() {
       if (!currentUser || !getPayload) {
         emitStatus(currentUser ? "Saved" : DEFAULT_STATUS);
+        return;
+      }
+      // Gate closed: keep showing "Saving" but do not schedule an upsert.
+      if (!saveAllowed()) {
+        emitStatus("Saving");
         return;
       }
       emitStatus("Saving");
@@ -394,6 +418,9 @@
       },
       setPayloadVerifier: function (verifier) {
         payloadVerifier = verifier;
+      },
+      setSaveGate: function (gate) {
+        saveGate = gate;
       },
       init: function (payloadReader) {
         getPayload = payloadReader;
