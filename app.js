@@ -748,6 +748,44 @@
     );
   }
 
+  // Read-back verification for cloud saves. Given the payload we just wrote
+  // (local) and the payload read back from Supabase (cloud), prove the cloud
+  // row durably contains the active sessions. If local carries a valid
+  // unfinished MAIN (visible or in mainSlot), the cloud payload must carry one
+  // too (visible or mainSlot). Same for an unfinished WRONG session. A kind we
+  // don't have locally is not required in the cloud. Returns true to allow a
+  // "Saved" status; false marks the save unverified.
+  function verifyPayload(localPayload, cloudPayload) {
+    var localState =
+      localPayload && localPayload.state
+        ? stateFromCloud(localPayload.state)
+        : null;
+    var cloudState =
+      cloudPayload && cloudPayload.state
+        ? stateFromCloud(cloudPayload.state)
+        : null;
+
+    // Nothing meaningful locally -> nothing to prove.
+    if (!localState) {
+      return true;
+    }
+
+    // Cloud must at least round-trip to a usable state if we have one.
+    if (!cloudState) {
+      return false;
+    }
+
+    if (mainFromSide(localState) && !mainFromSide(cloudState)) {
+      return false;
+    }
+
+    if (wrongFromSide(localState) && !wrongFromSide(cloudState)) {
+      return false;
+    }
+
+    return true;
+  }
+
   // Choose the surviving slot between local and remote candidates of the same
   // kind. Tie-break: prefer the further-progressed (more answered) session;
   // on equal progress fall back to whichever side saved more recently. A null
@@ -969,15 +1007,24 @@
       ui.syncStatus.classList.add("saving");
     } else if (text === "Saved") {
       ui.syncStatus.classList.add("saved");
-    } else if (text === "Sync error") {
+    } else if (text === "Sync error" || text === "Sync warning") {
       ui.syncStatus.classList.add("error");
     }
 
+    if (text === "Sync warning") {
+      ui.syncStatus.textContent = "Save not verified";
+    }
+
     if (ui.pauseSavedText) {
-      ui.pauseSavedText.textContent =
-        sync && sync.user
-          ? "Your progress has been saved for cloud sync."
-          : "Your progress has been saved on this device.";
+      if (sync && sync.user && text === "Sync warning") {
+        ui.pauseSavedText.textContent =
+          "Saved on this device, but the cloud copy was not verified. Reopen or retry to confirm cloud sync.";
+      } else {
+        ui.pauseSavedText.textContent =
+          sync && sync.user
+            ? "Your progress has been saved for cloud sync."
+            : "Your progress has been saved on this device.";
+      }
     }
   }
 
@@ -1174,6 +1221,9 @@
       sync.setHistoryMerger(function (cloudHistory, localHistory) {
         return mergeHistory(localHistory, cloudHistory);
       });
+    }
+    if (sync.setPayloadVerifier) {
+      sync.setPayloadVerifier(verifyPayload);
     }
     sync.onStatusChange(function (status) {
       renderSyncStatus(status);

@@ -31,6 +31,7 @@
       onStatusChange: function () {},
       onRemoteChange: function () {},
       setHistoryMerger: function () {},
+      setPayloadVerifier: function () {},
       init: function () {
         this.emitStatus(DEFAULT_STATUS);
         return Promise.resolve(null);
@@ -93,6 +94,7 @@
     var saving = false;
     var channel = null;
     var historyMerger = null;
+    var payloadVerifier = null;
 
     function mergeWithCloud(payload, remotePayload) {
       if (!historyMerger || !payload) {
@@ -314,12 +316,25 @@
               payload: payload,
               updated_at_ms: payload.updatedAtMs
             })
-            .select("updated_at_ms")
+            .select("payload, updated_at_ms")
             .single()
             .then(function (result) {
               if (result.error) {
                 throw result.error;
               }
+
+              // Read-back verification: prove the cloud row actually contains
+              // the active main/wrong state we just wrote. The verifier knows
+              // the quiz state shape; sync stays shape-agnostic.
+              var cloudPayload = result.data ? result.data.payload : null;
+              if (
+                payloadVerifier &&
+                !payloadVerifier(payload, cloudPayload)
+              ) {
+                emitStatus("Sync warning");
+                return { status: "unverified", payload: cloudPayload };
+              }
+
               emitStatus("Saved");
               return { status: "saved" };
             });
@@ -376,6 +391,9 @@
       },
       setHistoryMerger: function (merger) {
         historyMerger = merger;
+      },
+      setPayloadVerifier: function (verifier) {
+        payloadVerifier = verifier;
       },
       init: function (payloadReader) {
         getPayload = payloadReader;
