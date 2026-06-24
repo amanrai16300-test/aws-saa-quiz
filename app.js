@@ -839,6 +839,22 @@
       remoteTs
     );
 
+    // Visible-state promotion: a finished wrong-practice base must never stay
+    // visible when a valid unfinished main session survives. Otherwise clicking
+    // "Start Next Main Session" (or any newer local main) gets visually
+    // reverted to the finished wrong page by an older/equal remote row. Promote
+    // the surviving unfinished main to the visible base; its old finished-wrong
+    // base is discarded (it is finished, so never a wrong survivor anyway).
+    if (
+      mainCandidate &&
+      base &&
+      base.mode === "wrong" &&
+      base.finished &&
+      !validMainSlot(base)
+    ) {
+      base = clone(mainCandidate);
+    }
+
     // Flatten a survivor before parking it so slots never nest recursively
     // across repeated merges (a parked main must not carry its own slots).
     function flattenForSlot(candidate) {
@@ -1073,6 +1089,15 @@
   }
 
   function applyRemotePayload(payload) {
+    // Own echo: a payload we just wrote (init readback, token refresh, or a
+    // realtime/readback round-trip) carries our own clientId. Re-merging and
+    // re-saving it bumps updatedAt and re-queues another save, which echoes
+    // again -> the "Saved"/"Saving" oscillation. Never re-process our own row.
+    if (payload && payload.clientId && payload.clientId === clientId()) {
+      renderSyncStatus(sync && sync.user ? "Saved" : "Offline");
+      return;
+    }
+
     var remoteState = payload && payload.state
       ? stateFromCloud(payload.state)
       : null;
@@ -1099,6 +1124,28 @@
       remoteTs
     );
 
+    var mergedHistory = mergeHistory(
+      loadHistory(),
+      Array.isArray(payload.history) ? payload.history : []
+    );
+
+    // No-op guard: if the merged result is identical to what we already hold
+    // (state and history) and local is not ahead, applying it would only
+    // re-write localStorage, bump updatedAt, and re-queue a save -> feeding the
+    // echo loop. Compare in cloud shape (the durable form) and bail early.
+    var localAhead = localTs > remoteTs;
+    var sameState =
+      JSON.stringify(stateForCloud(merged)) ===
+      JSON.stringify(stateForCloud(state));
+    var sameHistory =
+      JSON.stringify(mainOnlyHistory(mergedHistory)) ===
+      JSON.stringify(mainOnlyHistory(loadHistory()));
+
+    if (!localAhead && sameState && sameHistory) {
+      renderSyncStatus(sync && sync.user ? "Saved" : "Offline");
+      return;
+    }
+
     applyingRemote = true;
     stopTimer();
     applyingRemote = false;
@@ -1107,16 +1154,8 @@
     // regardless of which side is newer, so keep our own updatedAt when local
     // is ahead and re-save the reconciled payload upward.
     var baseTs = Math.max(localTs, remoteTs) || Date.now();
-    var localAhead = localTs > remoteTs;
 
-    writeStateAndHistory(
-      merged,
-      mergeHistory(
-        loadHistory(),
-        Array.isArray(payload.history) ? payload.history : []
-      ),
-      baseTs
-    );
+    writeStateAndHistory(merged, mergedHistory, baseTs);
     refreshCurrentView();
     renderCycleStatus();
     renderHistory();
