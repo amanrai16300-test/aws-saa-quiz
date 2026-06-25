@@ -23,6 +23,10 @@
   // shortcut (separate localStorage) cannot push stale local state up before
   // authoritative cloud state loads. True when local-only / not signed in.
   var cloudReady = true;
+  // True once durable quiz_history rows have been fetched + merged into local
+  // history for this signed-in session. Until then a new main session must not
+  // be generated from incomplete local history. Always true when signed out.
+  var historyReady = true;
 
   function element(id) {
     return document.getElementById(id);
@@ -1249,6 +1253,10 @@
         var merged = mergeHistory(localHistory, rows);
         persistLocalHistory(merged);
 
+        // Durable rows are now merged into local history: safe to generate
+        // a new main session reconciled against the full completed history.
+        historyReady = true;
+
         // Durable history rows just loaded -> repair a possibly stale tracker
         // so completed-session questions don't reappear. Saves the corrected
         // tracker without resetting the active unfinished main session.
@@ -1302,6 +1310,7 @@
     // state may be pushed. Opened on init-resolve for local-only, or after the
     // first remote apply for signed-in sessions.
     cloudReady = false;
+    historyReady = false;
     if (sync.setSaveGate) {
       sync.setSaveGate(function () {
         return cloudReady;
@@ -1309,6 +1318,7 @@
     } else {
       // No gate support (noop sync) -> nothing to defer.
       cloudReady = true;
+      historyReady = true;
     }
 
     if (sync.setHistoryMerger) {
@@ -1345,11 +1355,13 @@
         }
         // Not signed in: no cloud to wait for, allow local saving.
         cloudReady = true;
+        historyReady = true;
         return null;
       })
       .catch(function () {
         // Init failed: don't strand the gate closed for a local-only user.
         cloudReady = true;
+        historyReady = true;
         renderSyncStatus("Sync error");
       });
   }
@@ -1381,11 +1393,13 @@
     // New sign-in: re-close the gate so this device's cloud state hydrates
     // authoritatively before any local state is pushed up.
     cloudReady = false;
+    historyReady = false;
     renderSyncStatus("Saving");
     sync.login(values.email, values.password)
       .then(handleAuthError)
       .catch(function (error) {
         cloudReady = true;
+        historyReady = true;
         handleAuthError({ error: error });
       });
   }
@@ -1401,11 +1415,13 @@
         handleAuthError(result);
         // Local-only from here: allow offline saving.
         cloudReady = true;
+        historyReady = true;
         renderAuth();
         renderSyncStatus("Offline");
       })
       .catch(function (error) {
         cloudReady = true;
+        historyReady = true;
         handleAuthError({ error: error });
       });
   }
@@ -1919,6 +1935,24 @@
   // first so completed current-cycle questions are never re-served, preserves
   // any wrong-practice session, and writes no history for whatever it replaces.
   function replaceWithFreshMain() {
+    // Signed in but durable quiz_history not yet merged -> generating now would
+    // reconcile against incomplete local history and repeat completed
+    // questions. Fetch+merge durable rows first, then retry once ready.
+    if (sync && sync.user && !historyReady) {
+      renderSyncStatus("Loading saved history…");
+      syncHistoryRows().then(function () {
+        if (historyReady) {
+          replaceWithFreshMain();
+        } else {
+          renderSyncStatus("Sync error");
+          window.alert(
+            "Could not load your saved history. Check your connection and try again."
+          );
+        }
+      });
+      return;
+    }
+
     stopTimer();
 
     // Preserve any saved wrong-practice session across the new main session.
