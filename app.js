@@ -1277,7 +1277,12 @@
         }
         return null;
       })
-      .catch(function () {});
+      .catch(function (error) {
+        // Surface the real durable-history load failure instead of hiding it,
+        // and reject so callers can keep the gate closed and report why.
+        console.error("syncHistoryRows failed:", error);
+        throw error;
+      });
   }
 
   function authValues() {
@@ -1335,7 +1340,8 @@
     });
     sync.onRemoteChange(function (payload) {
       applyRemotePayload(payload);
-      syncHistoryRows();
+      // Fire-and-forget refresh; gate stays closed on failure (logged inside).
+      syncHistoryRows().catch(function () {});
       renderAuth();
     });
     sync
@@ -1350,7 +1356,10 @@
               applyRemotePayload(remote ? remote.payload : null);
             })
             .then(function () {
-              return syncHistoryRows();
+              // Isolate failure here: a durable-history error must keep the
+              // gate closed (historyReady stays false), not fall through to
+              // init's outer catch which would wrongly mark history ready.
+              return syncHistoryRows().catch(function () {});
             });
         }
         // Not signed in: no cloud to wait for, allow local saving.
@@ -1940,16 +1949,21 @@
     // questions. Fetch+merge durable rows first, then retry once ready.
     if (sync && sync.user && !historyReady) {
       renderSyncStatus("Loading saved history…");
-      syncHistoryRows().then(function () {
-        if (historyReady) {
+      syncHistoryRows()
+        .then(function () {
+          // Durable rows merged -> historyReady now true; safe to generate.
           replaceWithFreshMain();
-        } else {
+        })
+        .catch(function (error) {
+          // Durable load failed: keep the current session paused, never
+          // generate from incomplete local history. Show the real reason.
           renderSyncStatus("Sync error");
           window.alert(
-            "Could not load your saved history. Check your connection and try again."
+            "Could not load your saved history, so a fresh session was not " +
+            "started (your current session is unchanged).\n\n" +
+            ((error && error.message) || String(error))
           );
-        }
-      });
+        });
       return;
     }
 
