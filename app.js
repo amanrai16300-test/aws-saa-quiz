@@ -32,6 +32,7 @@
     [
       "diagnostic", "introCard", "pausedCard", "quizArea", "resultsCard",
       "continueBtn", "newMainBtn", "currentWrongBtn", "resetAllBtn",
+      "discardMainBtn",
       "pauseTopBtn", "resumeBtn", "returnFromPauseBtn", "pauseBtn",
       "previousBtn", "submitBtn", "nextBtn", "wrongRetestBtn",
       "reviewBtn", "nextMainResultsBtn", "returnToPreviousBtn",
@@ -1914,11 +1915,10 @@
     return snapshot;
   }
 
-  function startNextMainSession() {
-    if (!canReplaceCurrentMain()) {
-      return;
-    }
-
+  // Replace the live state with a fresh main session. Reconciles the tracker
+  // first so completed current-cycle questions are never re-served, preserves
+  // any wrong-practice session, and writes no history for whatever it replaces.
+  function replaceWithFreshMain() {
     stopTimer();
 
     // Preserve any saved wrong-practice session across the new main session.
@@ -1943,6 +1943,27 @@
     renderQuestion();
     startTimer();
     window.scrollTo(0, 0);
+  }
+
+  function startNextMainSession() {
+    if (!canReplaceCurrentMain()) {
+      return;
+    }
+    replaceWithFreshMain();
+  }
+
+  // Abandon only the current unfinished main session (no history entry) and
+  // start a fresh one from the repaired tracker. Bypasses the finish guard
+  // intentionally; wrong-practice and completed history are untouched.
+  function discardCurrentMainSession() {
+    if (
+      !window.confirm(
+        "Discard this unfinished main session and start a fresh one?"
+      )
+    ) {
+      return;
+    }
+    replaceWithFreshMain();
   }
 
   function startWrongPractice(
@@ -2418,6 +2439,12 @@
       "click",
       resetAll
     );
+    if (ui.discardMainBtn) {
+      ui.discardMainBtn.addEventListener(
+        "click",
+        discardCurrentMainSession
+      );
+    }
     ui.pauseTopBtn.addEventListener(
       "click",
       pauseQuiz
