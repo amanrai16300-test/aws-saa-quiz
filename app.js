@@ -1927,6 +1927,11 @@
         ? detachSlots(state)
         : (state.wrongSlot ? clone(state.wrongSlot) : null);
 
+    // Repair a possibly stale/refilled pool before selecting, so completed
+    // current-cycle questions cannot be re-served while unusedIds still holds
+    // them (e.g. session created before async history reconcile resolved).
+    reconcileTrackerWithHistory(loadHistory());
+
     state = createMainState(state.tracker);
     if (savedWrong) {
       state.wrongSlot = savedWrong;
