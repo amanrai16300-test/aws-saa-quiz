@@ -12805,7 +12805,7 @@ window.QUIZ_QUESTIONS = [
       }
     ],
     "correct": [
-      "B"
+      "C"
     ],
     "multi": false,
     "answerSource": "uploaded_complete_answer_key_q1_684"
