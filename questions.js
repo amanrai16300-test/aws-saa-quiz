@@ -1332,7 +1332,7 @@ window.QUIZ_QUESTIONS = [
       }
     ],
     "correct": [
-      "B"
+      "D"
     ],
     "multi": false,
     "answerSource": "uploaded_complete_answer_key_q1_684"
@@ -3876,7 +3876,7 @@ window.QUIZ_QUESTIONS = [
       }
     ],
     "correct": [
-      "C"
+      "A"
     ],
     "multi": false,
     "answerSource": "uploaded_complete_answer_key_q1_684"
