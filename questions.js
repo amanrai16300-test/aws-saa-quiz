@@ -10295,7 +10295,7 @@ window.QUIZ_QUESTIONS = [
       }
     ],
     "correct": [
-      "A"
+      "D"
     ],
     "multi": false,
     "answerSource": "uploaded_complete_answer_key_q1_684"
